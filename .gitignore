@@ -1,0 +1,60 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Env
+.env
+.venv
+# SSH keys — never commit
+*.pem
+mykey.pem
+
+# System
+.DS_Store
+.idea/
+.vscode/
+
+# Build / temp
+dist/
+tmp/
+*.log
+
+
+qdrant_data/
+
+**/processed/**
+
+processed/
+
+**/uploads/**
+
+uploads/
+
+*.pth
+
+*.wav
+
+*.mp3
+=======
+
+clean/**
+**/rnnoise/**
+__pycache__/
+**/models/*
+**/models/**
+
+**/__pycache__/**
+tts_test_output/
+
+
+**/.cache/**
+AI_Service/tts_service/models/
+
+
+AI_Service/logs/*.txt
+AI_Service/logs/chat_log_*.txt
+
+**.json
+*.json
+**/logs/**

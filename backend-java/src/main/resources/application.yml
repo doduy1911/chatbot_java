@@ -1,0 +1,32 @@
+server:
+  port: ${PORT:3000}
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${HOST_DB:localhost}:${PORT_DB:5431}/${NAME_DB:ai_voice_app}
+    username: ${USER_DB:admin}
+    password: ${PASS_DB:voice-ai-db}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: UTC
+  data:
+    redis:
+      host: ${HOST_REDIS:localhost}
+      port: ${PORT_REDIS:6378}
+      password: ${PASS_REDIS:359E5eNLhR9c5WdxVk0w6Lu4cBWGGn0c}
+
+app:
+  jwt:
+    secret: ${AUTH_TOKEN:aNbCfe1ja31FhnbpvFN4/OAvLpyu1mDyKQYvuls9Ptg=}
+    expiration-days: 30
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
+  soniox:
+    api-key: ${STT:}

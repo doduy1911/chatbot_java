@@ -1,0 +1,365 @@
+MO TA LUONG HOAT DONG CLIENT PYTHON - ROBOT CHIKO2
+DANH CHO TEAM PHAN CUNG CODE LAI BANG ESP
+
+1. TONG QUAN HE THONG
+
+Client Python hien tai la chuong trinh chay tren may tinh/robot de:
+- Thu am micro lien tuc.
+- Dang nhap server de lay token.
+- Mo ket noi WebSocket toi server.
+- Gui audio raw PCM tu micro len server bang binary WebSocket.
+- Nhan lenh/status tu server.
+- Khi server bao het phan thu am, client dung mic.
+- Khi server tra ve audioUrl cua cau tra loi AI, client tai audio tu URL va phat ra loa.
+- Sau khi phat xong, client bat mic lai de tiep tuc nghe nguoi dung.
+
+File chinh:
+- main.py: khoi dong mic, WebSocket va vong lap gui audio.
+- logic/data_mic.py: quan ly micro, doc audio vao queue.
+- logic/ws_handler.py: quan ly WebSocket, nhan message server, dieu khien mic va phat audio.
+- logic/login.py: dang nhap HTTP de lay token va tao URL WebSocket.
+- logic/sound.py: phat audio TTS tu URL server tra ve.
+- logic/checkwifi.py: kiem tra co mang hay khong.
+- uploadFile.py: script rieng de upload file RAG, khong nam trong luong robot chinh.
+
+2. THONG SO AUDIO CAN GIU KHI CODE LAI
+
+Micro gui len server:
+- Format: PCM raw 16-bit signed little-endian.
+- Channels: 1 kenh mono.
+- Sample rate: 48000 Hz.
+- Chunk/frame: 480 samples.
+- Moi frame co kich thuoc: 480 samples * 2 bytes = 960 bytes.
+- Moi frame dai khoang: 480 / 48000 = 10 ms.
+- Khi khong recording, client van gui frame silence: 960 byte gia tri 0x00.
+
+Audio phat tu server/TTS:
+- Format sau khi bo WAV header: PCM 16-bit.
+- Channels: 1 kenh mono.
+- Sample rate: 24000 Hz.
+- Client Python bo qua 44 byte dau tien cua stream vi do la WAV header.
+- Sau do phat tung khoi audio raw PCM ra loa.
+
+3. LUONG KHOI DONG
+
+Buoc 1: Tao doi tuong MicStreamer.
+- Mo input audio voi cau hinh 48 kHz, mono, int16, chunk 480.
+- Tao queue audio toi da 5 frame.
+- Trang thai ban dau:
+  - is_running = True
+  - is_recording = False
+
+Buoc 2: Tao doi tuong WSClient.
+- Username mac dinh: chiko
+- Password mac dinh: 123456
+- Goi API dang nhap:
+  - POST http://118.70.187.211:4000/auth/login
+  - Body JSON:
+    {
+      "username": "chiko",
+      "password": "123456"
+    }
+- Neu dang nhap thanh cong, server tra ve token.
+- Client tao WebSocket URL:
+  - ws://118.70.187.211:4000?token=<token>
+
+Buoc 3: Bat thread doc micro.
+- main.py goi MIC.start().
+- Thread nay chay lien tuc trong background.
+- Neu is_recording = True thi doc audio tu mic va day vao queue.
+- Neu queue day, xoa frame cu nhat roi them frame moi nhat.
+
+Buoc 4: Bat recording.
+- main.py goi MIC.start_recording().
+- is_recording = True.
+- Tu luc nay thread micro bat dau dua frame audio vao queue.
+
+Buoc 5: Ket noi WebSocket.
+- Kiem tra internet bang cach connect toi 8.8.8.8:53 timeout 1 giay.
+- Neu co mang thi tao WebSocketApp va chay run_forever trong thread rieng.
+- Khi WebSocket open thanh cong:
+  - is_connected = True.
+
+Buoc 6: Gui thong tin voice profile.
+- Sau khi connect, main.py doi 1 giay roi gui JSON:
+  {
+    "voice": "nutrem"
+  }
+- Day la cau hinh giong noi/voice profile server se dung de tao audio reply.
+
+4. VONG LAP GUI AUDIO LEN SERVER
+
+Sau khi khoi dong, main.py chay while True lien tuc:
+
+Neu MIC.is_recording = True:
+- Lay 1 frame audio tu MIC.audio_queue.
+- Gui frame do len server bang WebSocket binary.
+- Moi frame la 960 byte PCM 48 kHz mono int16.
+
+Neu MIC.is_recording = False:
+- Tao silence frame bang b'\x00' * 960.
+- Gui silence frame len server bang WebSocket binary.
+- Sleep 0.01 giay.
+
+Y nghia voi ESP:
+- ESP can co task doc I2S microphone tao frame 10 ms.
+- Task WebSocket gui frame binary lien tuc len server.
+- Khi dang nghe nguoi dung thi gui audio that.
+- Khi dang cho/phat loa thi gui silence de server khong nhan nham tieng loa thanh tieng nguoi dung.
+
+5. CAC MESSAGE NHAN TU SERVER QUA WEBSOCKET
+
+Client chi xu ly JSON text message tu server.
+
+5.1. Message ket thuc mic
+
+Server gui:
+{
+  "type": "STATUS",
+  "content": "end_mic_Bytehome"
+}
+
+Client xu ly:
+- Goi mic.stop_recording().
+- is_recording = False.
+- Clear toan bo audio queue cu.
+- Luu thoi diem end_mic_time = time.time().
+
+Y nghia:
+- Server da xac dinh nguoi dung noi xong hoac can dung mic.
+- Client dung thu audio that.
+- Client tiep tuc gui silence frame trong vong lap main.
+
+5.2. Message AI voice reply
+
+Server gui:
+{
+  "type": "AI_VOICE_REPLY",
+  "audioUrl": "http://..."
+}
+
+Client xu ly:
+- Dung mic mot lan nua bang mic.stop_recording().
+- Neu co audioUrl:
+  - Tao thread rieng de tai va phat audio tu URL.
+  - Trong luc phat, mic van dang off.
+- Neu khong co audioUrl:
+  - Tao thread _wait_and_restart_mic de bat lai mic sau khi audio thread ket thuc.
+
+Luu y quan trong:
+- Trong code Python hien tai, sau khi co audioUrl va phat xong, ham play_audio_stream chi clear is_playing_event, nhung khong tu goi start_recording().
+- Ham _wait_and_restart_mic chi duoc goi trong nhanh khong co audioUrl.
+- Neu muon robot hoi dap lien tuc tren ESP, nen bat lai mic sau khi phat audio xong.
+- Logic de xuat cho ESP: khi phat TTS xong thi goi start_recording lai.
+
+6. LUONG PHAT AUDIO TTS TU AUDIO URL
+
+Khi nhan AI_VOICE_REPLY co audioUrl:
+
+Buoc 1: Mo HTTP GET streaming toi audioUrl.
+- requests.get(url, stream=True, timeout=10)
+
+Buoc 2: Kiem tra HTTP status.
+- Neu status khac 200 thi thoat, khong phat.
+
+Buoc 3: Doc tung chunk 512 byte tu HTTP stream.
+
+Buoc 4: Bo WAV header.
+- Client gom buffer cho den khi co it nhat 44 byte.
+- Bo 44 byte dau tien.
+- Phan con lai xem la PCM int16.
+
+Buoc 5: Can chinh du lieu theo 2 byte.
+- Vi int16 can 2 byte/sample.
+- Neu buffer le byte thi giu lai byte du cho lan sau.
+
+Buoc 6: Phat audio.
+- Output audio cau hinh 24000 Hz, mono, int16.
+- Ghi data PCM ra stream loa.
+
+Buoc 7: Ket thuc.
+- Dong stream loa.
+- Clear co is_playing_event.
+- Nen bat lai mic de tiep tuc vong hoi dap.
+
+7. TRANG THAI HE THONG GOI Y CHO ESP
+
+Co the code ESP theo state machine sau:
+
+STATE_BOOT:
+- Khoi tao WiFi.
+- Khoi tao I2S mic 48 kHz mono 16-bit.
+- Khoi tao I2S speaker/DAC 24 kHz mono 16-bit.
+- Chuyen sang STATE_LOGIN.
+
+STATE_LOGIN:
+- POST /auth/login voi username/password.
+- Lay token.
+- Tao URL WebSocket ws://118.70.187.211:4000?token=<token>.
+- Chuyen sang STATE_WS_CONNECT.
+
+STATE_WS_CONNECT:
+- Ket noi WebSocket.
+- Khi connected, gui JSON voice profile:
+  {"voice":"nutrem"}
+- Chuyen sang STATE_LISTENING.
+
+STATE_LISTENING:
+- Doc I2S mic moi 10 ms, frame 960 byte.
+- Gui frame binary len WebSocket.
+- Neu nhan STATUS/end_mic_Bytehome:
+  - Stop recording.
+  - Clear buffer mic.
+  - Chuyen sang STATE_WAIT_REPLY.
+
+STATE_WAIT_REPLY:
+- Van co the gui silence frame 960 byte moi 10 ms neu server can stream lien tuc.
+- Cho message AI_VOICE_REPLY.
+- Neu co audioUrl thi chuyen sang STATE_PLAYING_TTS.
+- Neu khong co audioUrl thi quay lai STATE_LISTENING.
+
+STATE_PLAYING_TTS:
+- Gui silence frame trong khi dang phat de tranh echo.
+- HTTP GET audioUrl.
+- Bo 44 byte WAV header.
+- Phat PCM 24 kHz mono int16 ra loa.
+- Khi phat xong, chuyen lai STATE_LISTENING.
+
+STATE_RECONNECT:
+- Neu mat WiFi/WebSocket, dung gui audio.
+- Thu ket noi lai WiFi/WebSocket.
+- Sau khi connected lai thi gui lai voice profile va quay ve STATE_LISTENING.
+
+8. DINH DANG DU LIEU GUI QUA WEBSOCKET
+
+8.1. JSON text
+
+Sau khi connected:
+{
+  "voice": "nutrem"
+}
+
+Trong class MicStreamer co y dinh gui:
+{
+  "type": "start"
+}
+
+Nhung trong code hien tai, MIC khong duoc gan ws_client nen message {"type":"start"} co the khong duoc gui.
+Neu server yeu cau message start, ESP nen gui ro rang khi bat dau nghe.
+
+8.2. Binary audio
+
+Moi goi binary:
+- 960 byte.
+- PCM signed 16-bit little-endian.
+- 1 channel.
+- 48000 Hz.
+- 10 ms/frame.
+
+Silence frame:
+- 960 byte 0x00.
+
+9. CAC API / ENDPOINT CAN DUNG
+
+Login:
+- Method: POST
+- URL: http://118.70.187.211:4000/auth/login
+- Body JSON:
+  {
+    "username": "chiko",
+    "password": "123456"
+  }
+- Response mong doi:
+  {
+    "token": "..."
+  }
+
+WebSocket:
+- URL: ws://118.70.187.211:4000?token=<token>
+- Text message gui len: JSON cau hinh voice.
+- Binary message gui len: audio PCM frame.
+
+TTS audio URL:
+- URL nam trong field audioUrl cua message AI_VOICE_REPLY.
+- ESP can HTTP GET URL nay va stream audio ve de phat.
+
+10. PSEUDOCODE CHO ESP
+
+setup():
+  wifi_connect()
+  i2s_mic_init(rate=48000, channels=1, bits=16)
+  i2s_speaker_init(rate=24000, channels=1, bits=16)
+
+  token = http_post_login("chiko", "123456")
+  ws_connect("ws://118.70.187.211:4000?token=" + token)
+  ws_send_text("{\"voice\":\"nutrem\"}")
+
+  state = LISTENING
+
+loop():
+  ws_poll()
+
+  if state == LISTENING:
+    frame = i2s_mic_read(960 bytes)
+    ws_send_binary(frame)
+
+  else if state == WAIT_REPLY:
+    ws_send_binary(silence_960_bytes)
+    delay(10 ms)
+
+  else if state == PLAYING_TTS:
+    ws_send_binary(silence_960_bytes)
+    // Viec phat TTS nen chay trong task rieng,
+    // hoac loop nay phai vua feed speaker vua giu websocket alive.
+    delay(10 ms)
+
+on_ws_message(json):
+  if json.type == "STATUS" and json.content == "end_mic_Bytehome":
+    clear_mic_buffer()
+    state = WAIT_REPLY
+
+  if json.type == "AI_VOICE_REPLY":
+    if json.audioUrl exists:
+      state = PLAYING_TTS
+      play_tts_from_url(json.audioUrl)
+      clear_mic_buffer()
+      state = LISTENING
+    else:
+      clear_mic_buffer()
+      state = LISTENING
+
+play_tts_from_url(url):
+  http_stream_open(url)
+  skip_first_44_bytes()
+  while http_has_data:
+    data = read_chunk()
+    align_to_2_bytes()
+    i2s_speaker_write(data)
+  http_close()
+
+11. LUU Y KHI PORT SANG ESP
+
+- Can dam bao WebSocket gui binary dung opcode binary, khong ma hoa base64.
+- Can giu dung sample rate mic 48000 Hz, speaker 24000 Hz neu server dang thiet ke theo cau hinh nay.
+- Moi frame mic nen la 10 ms = 960 byte de server nhan giong client Python.
+- Nen tach task:
+  - Task WebSocket/network.
+  - Task I2S mic capture.
+  - Task I2S speaker playback.
+- Khi dang phat loa, nen dung mic hoac chi gui silence de tranh echo/feedback.
+- Nen bat lai mic sau khi phat xong TTS de hoi dap lien tuc.
+- Neu server yeu cau, gui them {"type":"start"} khi bat dau recording.
+- Can co co che reconnect WiFi/WebSocket khi mat mang.
+- Khong nen de token hard-code lau dai neu san pham thuc te; nen login moi moi lan boot.
+
+12. SCRIPT uploadFile.py
+
+uploadFile.py khong phai luong robot runtime.
+Day la script rieng de upload nhieu file len API RAG:
+- POST http://localhost:4000/api/admin/rag/uploadfile
+- Header Authorization Bearer TOKEN
+- Form-data:
+  - groupId
+  - files: nhieu file
+
+Team ESP co the bo qua file nay neu chi code robot hoi dap bang giong noi.
