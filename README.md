@@ -1,160 +1,220 @@
-# ⚙️ Chatbot Backend Microservice
+# Voice AI Chatbot Platform
 
-Dự án **Chatbot Backend Microservice** được thiết kế theo kiến trúc **microservice**, cho phép xử lý **song song các luồng dữ liệu** và mở rộng linh hoạt.  
-Hệ thống hỗ trợ **đa người dùng**, **WebSocket**, và **AI Worker** hoạt động song song.
-
----
-
-## 🧠 Thành phần hệ thống
-
-| Thành phần | Công nghệ | Mô tả |
-|-------------|------------|--------|
-| **Backend** | Node.js | Quản lý API, WebSocket, người dùng, giao tiếp với Redis |
-| **AI Service** | Python | Xử lý logic AI, có thể mở rộng bằng nhiều worker song song |
-| **PostgreSQL** | Database | Lưu người dùng và lịch sử chat |
-| **Redis** | Cache/Message Queue | Giao tiếp giữa các service |
-| **Qdrant** | Vector DB | Lưu embedding và tìm kiếm ngữ nghĩa |
+A production-ready, multi-tenant voice AI chatbot platform built with a microservice architecture. The system supports real-time voice interaction — streaming audio from hardware clients (ESP/robot devices), converting speech to text, generating AI responses via LLM, synthesizing speech with a custom TTS model, and delivering audio back to clients over WebSocket.
 
 ---
 
-## 🚀 Cài đặt & Chạy hệ thống
+## Architecture Overview
 
-### 🪜 Bước 1: Khởi chạy các service nền tảng
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Clients                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │  React Web   │  │  Robot/ESP   │  │  Admin Dashboard │  │
+│  │  (BHXH Chat) │  │  (Python mic)│  │  (REST API)      │  │
+│  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘  │
+└─────────┼─────────────────┼───────────────────┼────────────┘
+          │ HTTP/WebSocket   │ WebSocket Binary   │ HTTP/JWT
+          ▼                  ▼                   ▼
+┌──────────────────────────────────────────────────────────────┐
+│              Backend  (Spring Boot 3 / Java 17)              │
+│  JWT Auth · WebSocket Handler · REST API · Redis Queue       │
+│  Admin: Users / Groups / Prompts / RAG Docs                  │
+└──────────────────┬───────────────────────────────────────────┘
+                   │ Redis Pub/Sub + Queue
+          ┌────────┴──────────────────────┐
+          ▼                               ▼
+┌──────────────────────┐     ┌────────────────────────────┐
+│   AI Chat Workers    │     │   TTS Workers              │
+│   (Python / Vertex)  │     │   (Python / OmniVoice)     │
+│   LangChain + Memory │     │   Streaming MP3/PCM        │
+└──────────────────────┘     └────────────────────────────┘
+          │                               │
+          ▼                               ▼
+┌──────────────────────┐     ┌────────────────────────────┐
+│   Embedding Workers  │     │   voice_ready:{userId}     │
+│   SentenceTransformer│     │   → Redis Pub/Sub          │
+│   Qdrant RAG         │     │   → WS push to client      │
+└──────────────────────┘     └────────────────────────────┘
+
+Infrastructure: PostgreSQL · Redis · Qdrant
+```
+
+---
+
+## Key Features
+
+- **Real-time voice pipeline** — WebSocket binary streaming, STT (Soniox), LLM response, TTS synthesis, audio delivery in one round-trip
+- **Multi-tenant** — Groups with independent system prompts; each group gets its own AI persona and RAG knowledge base
+- **Scalable AI workers** — Python workers consume from Redis queues; scale horizontally with `--scale`
+- **Custom TTS** — OmniVoice model with multiple Vietnamese voice profiles, streaming MP3 output
+- **RAG (Retrieval-Augmented Generation)** — Upload PDF/Word documents, chunked and embedded into Qdrant for semantic search
+- **Sliding-window memory + summarization** — Per-user conversation history with automatic background summarization via Vertex AI
+- **Role-based access control** — Admin and User roles enforced via Spring Security + JWT
+- **Hardware client support** — Python client for ESP/robot devices that streams raw PCM from microphone over WebSocket
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend API | Java 17, Spring Boot 3.2, Spring Security, Spring WebSocket |
+| ORM / DB migration | Spring Data JPA, Flyway |
+| AI / LLM | Google Vertex AI (Gemini), LangChain Python |
+| TTS | OmniVoice (custom voice cloning model), lameenc MP3 |
+| STT | Soniox Streaming API |
+| Embeddings | SentenceTransformer (`all-MiniLM-L6-v2`) |
+| Vector DB | Qdrant |
+| Message queue | Redis 7 (Pub/Sub + List queue) |
+| Relational DB | PostgreSQL 15 |
+| Frontend | React 18, Vite, Tailwind CSS |
+| Hardware client | Python (PyAudio mic streaming) |
+| Containerization | Docker, Docker Compose |
+
+---
+
+## Project Structure
+
+```
+.
+├── backend-java/               # Spring Boot API server
+│   └── src/main/java/com/voiceai/
+│       ├── auth/               # JWT auth, Spring Security filter
+│       ├── admin/              # Admin controllers (users, groups, prompts, RAG)
+│       ├── client/             # Client-facing chat + RAG endpoints
+│       ├── websocket/          # WebSocket handler + JWT handshake interceptor
+│       ├── redis/              # Redis queue service (push tasks, Pub/Sub)
+│       ├── model/              # JPA entities: User, Group, Prompt, Role
+│       └── config/             # CORS, Redis, Security, Jackson configs
+│
+├── AI_Service/
+│   ├── chat_service_robot/     # AI chat worker (Vertex AI + LangChain memory)
+│   ├── embetdding_service/     # Embedding worker (SentenceTransformer + Qdrant)
+│   └── tts_service/            # TTS worker (OmniVoice streaming synthesis)
+│       └── omnivoice/          # Model code: training, inference, evaluation
+│
+├── client/                     # Python robot client (mic streaming over WebSocket)
+├── ui-ux/                      # React frontend (BHXH chatbot UI)
+└── docker-compose.yml          # PostgreSQL + Redis + Qdrant + Backend
+```
+
+---
+
+## Data Model
+
+```
+role ──< users >── groups ──< prompts ──< summaryprompts
+                                │
+                             Qdrant collection (embeddings per groupId)
+```
+
+- **Groups** — organizational unit (e.g. a company deploying a chatbot)
+- **Prompts** — system prompt defining the AI persona for each group
+- **Users** — belong to a group; `clientType` is either `human` (web) or `robot` (hardware device)
+
+---
+
+## How a Voice Request Flows
+
+1. Robot client streams raw PCM audio frames over WebSocket binary
+2. Backend receives frames and forwards to Soniox STT (streaming HTTP)
+3. Transcribed text is pushed as a task onto a Redis list queue
+4. An AI chat worker picks up the task, runs RAG retrieval from Qdrant, queries Vertex AI, returns LLM text
+5. LLM text is pushed to a TTS worker queue
+6. TTS worker synthesizes speech chunk-by-chunk using OmniVoice, encodes to MP3, stores the file
+7. TTS worker publishes `voice_ready:{userId}` on Redis Pub/Sub with text + audio URL
+8. Backend WebSocket handler receives the Pub/Sub event and pushes `AI_VOICE_REPLY` to the client session
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Python 3.11+ with `uv` (for AI services)
+- Java 17 + Maven (for backend, or use the provided Dockerfile)
+
+### 1. Start infrastructure
 
 ```bash
-cd chatbot
 docker compose up -d
 ```
 
-➡️ Lệnh này sẽ chạy ngầm các service:
-- **PostgreSQL**
-- **Redis**
-- **Qdrant**
+Starts: PostgreSQL (port 5431), Redis (port 6378), Qdrant (port 6333), and the Spring Boot backend (port 3000).
 
----
-
-### 🪜 Bước 2: Cài đặt & khởi chạy Backend
+### 2. Start AI workers
 
 ```bash
+# Chat workers (scale as needed)
+cd AI_Service/chat_service_robot
+docker compose up --scale ai_worker=3
+
+# Embedding worker
+cd AI_Service/embetdding_service
+uv run python worker.py
+
+# TTS worker (GPU recommended)
+cd AI_Service/tts_service
+uv run python wordker.py
+```
+
+### 3. Start the web frontend
+
+```bash
+cd ui-ux
 npm install
-npm start
+npm run dev
 ```
 
-➡️ Backend chạy tại địa chỉ:  
-👉 **http://localhost:3000**
+Frontend available at `http://localhost:5173`.
 
----
-
-### 🪜 Bước 3: Chạy AI Service (Python)
+### 4. Start the robot client
 
 ```bash
-cd AI_Service
-docker compose up --scale ai_worker=5
-```
-
-> 🔧 Thay đổi số lượng `ai_worker` tùy theo cấu hình máy để tối ưu hiệu năng.  
-Ví dụ: `--scale ai_worker=2` cho máy yếu hoặc `--scale ai_worker=10` cho máy mạnh.
-
-➡️ AI service chạy tại:  
-👉 **http://localhost:5000**
-
----
-
-### 🪜 Bước 4: Kiểm thử hệ thống
-
-Chạy script kiểm thử mẫu:
-
-```bash
-python3 client/test.py
-```
-
-✅ Nếu kết nối thành công, bạn sẽ thấy:
-```
- Đang đăng nhập tài khoản: <username>...
- Lấy Token thành công!
- WebSocket đã thông! Bạn có thể bắt đầu chat.
+cd client
+uv run python main.py
 ```
 
 ---
 
-## ⚙️ Cấu hình môi trường
+## Environment Variables (Backend)
 
-Tạo file `.env` tại thư mục gốc:
-
-```bash
-PORT=3000
-JWT_SECRET=supersecret
-
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=chatbot
-
-REDIS_HOST=redis
-REDIS_PORT=6379
-
-AI_API_URL=http://ai_service:5000
-```
+| Variable | Description | Default |
+|---|---|---|
+| `HOST_DB` / `PORT_DB` | PostgreSQL host and port | `localhost` / `5431` |
+| `NAME_DB` / `USER_DB` / `PASS_DB` | Database credentials | see `docker-compose.yml` |
+| `HOST_REDIS` / `PORT_REDIS` / `PASS_REDIS` | Redis connection | see `docker-compose.yml` |
+| `AUTH_TOKEN` | JWT signing secret | — |
+| `STT` | Soniox API key | — |
+| `UPLOAD_DIR` | Directory for uploaded RAG documents | `uploads` |
 
 ---
 
-## 📁 Cấu trúc dự án
+## API Highlights
 
-```
-chatbot/
-├── backend/              # Node.js service
-│   ├── src/
-│   ├── routes/
-│   └── server.js
-│
-├── AI_Service/           # Python service
-│   ├── main.py
-│   ├── requirements.txt
-│   └── Dockerfile
-│
-├── client/               # Script kiểm thử
-│   └── test.py
-│
-├── docker-compose.yml
-├── .env
-└── README.md
-```
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/auth/login` | Login, returns JWT |
+| `GET/POST` | `/api/chat` | Send a text message, get AI reply |
+| `WS` | `/ws/chat` | WebSocket connection for voice clients |
+| `POST` | `/api/rag/upload` | Upload document for RAG |
+| `POST` | `/admin/users` | Create user (admin only) |
+| `POST` | `/admin/groups` | Create group with prompt (admin only) |
+| `GET` | `/health` | Health check |
 
 ---
 
-## 🧩 Công nghệ sử dụng
-- **Node.js / Express**
-- **Python / FastAPI**
-- **Redis**
-- **PostgreSQL**
-- **Qdrant**
-- **Docker Compose**
+## Notable Design Decisions
+
+- **Redis as the async backbone** — All cross-service communication goes through Redis queues and Pub/Sub, keeping services fully decoupled. The Java backend never calls Python services directly.
+- **Per-group prompt isolation** — Each tenant group has its own system prompt cached in Redis at WebSocket connect time (`warmupPromptCache`), avoiding DB reads on every message.
+- **Sliding-window + async summarization** — The last 6 messages are kept in memory; older messages are summarized in a background thread to stay under LLM context limits without blocking the main response.
+- **OmniVoice streaming** — TTS output is generated sentence-by-sentence and streamed as MP3 chunks, reducing time-to-first-audio.
 
 ---
 
-## 💡 Ghi chú
-- Có thể mở rộng thêm **AI worker** khi cần tăng khả năng xử lý song song.  
-- Tất cả các container có thể theo dõi bằng lệnh:
-  ```bash
-  docker ps
-  docker logs -f <container_name>
-  ```
-- Để dừng toàn bộ hệ thống:
-  ```bash
-  docker compose down
-  ```
+## Author
 
-
-kiemr tra redis
-docker exec -it redis_ai_service redis-cli MONITORdocker exec -it redis_ai_service redis-cli MONITOR
----
-
-## 👨‍💻 Tác giả
-**Duy Đỗ (doduy-AI)**  
-📧 [dev.dinhduy@gmail.com](mailto:dev.dinhduy@gmail.com)
-
----
-
-> ⭐ *Nếu bạn thấy dự án hữu ích, hãy để lại một star để ủng hộ nhé!*
-
-sudo apt install pandoc
-
+**Duy Do** — [dev.dinhduy@gmail.com](mailto:dev.dinhduy@gmail.com)
