@@ -2,6 +2,10 @@ package com.voiceai;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.ReactiveRedisConnectionFactory;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.test.context.TestPropertySource;
 
 @SpringBootTest
@@ -12,12 +16,17 @@ import org.springframework.test.context.TestPropertySource;
     "spring.datasource.password=",
     "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
     "spring.jpa.hibernate.ddl-auto=create-drop",
+    "spring.flyway.enabled=false",
     "spring.data.redis.host=localhost",
     "spring.data.redis.port=6379",
     "app.jwt.secret=testsecret12345678901234567890123456",
     "app.jwt.expiration-days=30"
 })
 class VoiceAiApplicationTest {
+
+    @MockBean RedisConnectionFactory redisConnectionFactory;
+    @MockBean ReactiveRedisConnectionFactory reactiveRedisConnectionFactory;
+    @MockBean RedisMessageListenerContainer redisMessageListenerContainer;
 
     @Test
     void contextLoads() {

@@ -1,5 +1,5 @@
 server:
-  port: ${PORT:3000}
+  port: ${PORT:4000}
 
 spring:
   datasource:
@@ -7,15 +7,26 @@ spring:
     username: ${USER_DB:admin}
     password: ${PASS_DB:voice-ai-db}
     driver-class-name: org.postgresql.Driver
+
   jpa:
     hibernate:
-      ddl-auto: none
-    show-sql: false
+      ddl-auto: update
+    show-sql: true
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         jdbc:
           time_zone: UTC
+
+  flyway:
+    enabled: false
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 100MB
+
   data:
     redis:
       host: ${HOST_REDIS:localhost}

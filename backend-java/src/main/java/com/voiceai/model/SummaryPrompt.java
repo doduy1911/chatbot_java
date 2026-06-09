@@ -9,7 +9,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "SummaryPrompts")
+@Table(name = "summaryPrompts")
 public class SummaryPrompt {
 
     @Id

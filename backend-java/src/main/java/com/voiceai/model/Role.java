@@ -3,7 +3,7 @@ package com.voiceai.model;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "Role")
+@Table(name = "role")
 public class Role {
 
     @Id

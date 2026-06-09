@@ -30,7 +30,7 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/auth/**", "/health").permitAll()
+                .requestMatchers("/auth/**", "/health", "/ws/**").permitAll()
                 .requestMatchers("/api/admin/**").access((authentication, context) ->
                     new org.springframework.security.authorization.AuthorizationDecision(
                         adminAuthorization.isAdmin(authentication.get())))

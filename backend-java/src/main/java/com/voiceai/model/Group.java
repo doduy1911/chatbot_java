@@ -9,7 +9,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "Groups")
+@Table(name = "groups")
 public class Group {
 
     @Id

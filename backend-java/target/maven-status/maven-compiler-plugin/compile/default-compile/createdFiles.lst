@@ -1,0 +1,6 @@
+com\voiceai\websocket\ChatWebSocketConfig.class
+com\voiceai\client\ChatController.class
+com\voiceai\websocket\ChatWebSocketHandler.class
+com\voiceai\websocket\JwtHandshakeInterceptor.class
+com\voiceai\client\ClientRagController.class
+com\voiceai\admin\AdminRagController.class
